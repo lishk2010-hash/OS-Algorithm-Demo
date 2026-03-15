@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>操作系统算法演示</title>
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
+  background: #f4f2ec;
+  color: #18160f;
+  min-height: 100vh;
+  padding: 3rem 2rem;
+}
+.container { max-width: 820px; margin: 0 auto; }
+header {
+  text-align: center;
+  margin-bottom: 3rem;
+  padding-bottom: 2rem;
+  border-bottom: 2px solid #d2cec2;
+}
+header h1 { font-size: 32px; font-weight: 700; margin-bottom: 8px; }
+header p  { font-size: 17px; color: #54504a; }
+.section-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: #88847e;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  margin: 2rem 0 0.75rem;
+}
+.grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  margin-bottom: 0.5rem;
+}
+@media (max-width: 600px) { .grid { grid-template-columns: 1fr; } }
+.card {
+  background: #fff;
+  border: 2px solid #d2cec2;
+  border-radius: 14px;
+  padding: 1.25rem 1.5rem;
+  text-decoration: none;
+  color: inherit;
+  display: block;
+  transition: border-color .15s, transform .1s;
+}
+.card:hover { border-color: #8a80e4; transform: translateY(-2px); }
+.card-header { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
+.card-icon {
+  width: 36px; height: 36px;
+  border-radius: 8px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 18px; flex-shrink: 0;
+}
+.card h2 { font-size: 16px; font-weight: 600; color: #18160f; }
+.card p  { font-size: 13px; color: #54504a; line-height: 1.65; }
+.card .tag {
+  display: inline-block;
+  margin-top: 10px;
+  padding: 2px 9px;
+  border-radius: 5px;
+  font-size: 12px;
+  font-weight: 600;
+  background: #eceae2;
+  color: #54504a;
+}
+.icon-purple { background: #e8e5fb; }
+.icon-teal   { background: #ccf0e3; }
+.icon-amber  { background: #faeeda; }
+.icon-coral  { background: #fce6de; }
+.icon-blue   { background: #ddeefb; }
+.icon-green  { background: #dff0db; }
+footer {
+  text-align: center;
+  font-size: 13px;
+  color: #88847e;
+  margin-top: 3rem;
+  padding-top: 1.5rem;
+  border-top: 1px solid #d2cec2;
+}
+</style>
+</head>
+<body>
+<div class="container">
+
+  <header>
+    <h1>操作系统算法演示</h1>
+    <p>OS Algorithm Interactive Demo &nbsp;·&nbsp; 点击卡片进入对应演示</p>
+  </header>
+
+  <div id="content"></div>
+
+  <footer>
+    操作系统课程教学演示 &nbsp;·&nbsp;
+    <a href="https://github.com/lishk2010-hash/OS_Algorithm" style="color:#8a80e4;text-decoration:none">
+      lishk2010-hash / OS_Algorithm
+    </a>
+  </footer>
+
+</div>
+
+<script>
+const BASE = 'https://lishk2010-hash.github.io/OS_Algorithm/';
+
+// =============================================
+// 维护区：新增演示只需在这里添加一条记录
+// 字段说明：
+//   file    - HTML 文件名（与仓库中文件名一致）
+//   title   - 卡片标题
+//   desc    - 简短描述
+//   tag     - 右下角标签
+//   icon    - 图标字符
+//   color   - 图标背景色 class（purple/teal/amber/coral/blue/green）
+//   category - 分组标题（相同 category 的卡片归为一组）
+// =============================================
+const demos = [
+  {
+    category: '进程管理',
+    file: 'Context_Switch_Process.html',
+    title: '进程切换：CPU 现场保护与恢复',
+    desc: '以 Intel 8088 为例，逐步演示时间片到时后操作系统的完整切换过程。',
+    tag: '分时系统', icon: '⚙', color: 'purple'
+  },
+  {
+    category: '进程管理',
+    file: 'Process_State_Transition.html',
+    title: '进程状态转换',
+    desc: '交互式演示进程在就绪、运行、阻塞等状态之间的转换过程。',
+    tag: '进程状态', icon: '🔄', color: 'teal'
+  },
+  {
+    category: '处理机调度',
+    file: 'HRRN_Scheduler.html',
+    title: 'HRRN 调度算法',
+    desc: '最高响应比优先调度，动态演示响应比计算与进程选择过程。',
+    tag: '非抢占', icon: '📊', color: 'amber'
+  },
+  {
+    category: '处理机调度',
+    file: 'MLFQ_Scheduler.html',
+    title: 'MLFQ 多级反馈队列',
+    desc: '多级反馈队列调度算法，展示进程在各优先级队列间的动态调度。',
+    tag: '抢占式', icon: '📋', color: 'coral'
+  },
+  {
+    category: '处理机调度',
+    file: 'Realtime_EDF_vs_LLF.html',
+    title: '实时调度：EDF vs LLF',
+    desc: '最早截止时间优先与最低松弛度优先算法的对比演示，含逐块调度过程。',
+    tag: '实时系统', icon: '⏱', color: 'purple'
+  },
+];
+// =============================================
+// 以下代码无需修改
+// =============================================
+
+function render() {
+  const groups = {};
+  demos.forEach(d => {
+    if (!groups[d.category]) groups[d.category] = [];
+    groups[d.category].push(d);
+  });
+
+  let html = '';
+  for (const [cat, items] of Object.entries(groups)) {
+    html += `<div class="section-title">${cat}</div><div class="grid">`;
+    items.forEach(d => {
+      html += `
+        <a class="card" href="${BASE}${encodeURIComponent(d.file)}">
+          <div class="card-header">
+            <div class="card-icon icon-${d.color}">${d.icon}</div>
+            <h2>${d.title}</h2>
+          </div>
+          <p>${d.desc}</p>
+          <span class="tag">${d.tag}</span>
+        </a>`;
+    });
+    html += `</div>`;
+  }
+  document.getElementById('content').innerHTML = html;
+}
+
+render();
+</script>
+</body>
+</html>
