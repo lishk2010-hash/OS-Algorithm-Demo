@@ -1,0 +1,614 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>实时调度演示：EDF vs LLF</title>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#f3f1eb;--surf:#fff;--surf2:#eceae2;--bdr:#d2cec2;
+  --tp:#16140e;--ts:#52504a;--tm:#86847e;
+  --ca:#4535c0;--cal:#e8e5fb;--cam:#8a80e4;
+  --cb:#0b7d58;--cbl:#ccf0e3;--cbm:#46c498;
+  --cs:#c43810;--csl:#fce6de;
+}
+body{font-family:'PingFang SC','Hiragino Sans GB','Microsoft YaHei',sans-serif;
+  background:var(--bg);color:var(--tp);padding:1.5rem 1.75rem 2rem;font-size:17px;line-height:1.6;
+  max-width:900px;margin:0 auto}
+
+header{text-align:center;margin-bottom:1.5rem;padding-bottom:1.25rem;border-bottom:2px solid var(--bdr)}
+header h1{font-size:26px;font-weight:700;margin-bottom:4px}
+header h2{font-size:17px;font-weight:400;color:var(--ts);margin-bottom:10px}
+.chips{display:flex;justify-content:center;gap:10px;flex-wrap:wrap}
+.chip{padding:5px 13px;border-radius:7px;font-size:14px;font-weight:500;border:2px solid}
+.cA{background:var(--cal);color:var(--ca);border-color:var(--cam)}
+.cB{background:var(--cbl);color:var(--cb);border-color:var(--cbm)}
+.cU{background:var(--surf2);color:var(--ts);border-color:var(--bdr)}
+
+/* panel */
+.panel{background:var(--surf);border:2px solid var(--bdr);border-radius:14px;
+  padding:1.25rem 1.5rem;margin-bottom:1.5rem}
+.ph{display:flex;align-items:center;gap:10px;margin-bottom:8px}
+.ph h3{font-size:22px;font-weight:700}
+.abadge{font-size:12px;font-weight:600;padding:3px 9px;border-radius:5px;
+  background:var(--surf2);color:var(--ts)}
+.rule{font-size:14px;color:var(--ts);background:var(--surf2);border-radius:7px;
+  padding:8px 13px;margin-bottom:10px;line-height:1.8;
+  font-family:'SF Mono','Fira Code','Consolas',monospace}
+.hl{color:var(--cs);font-weight:700}
+
+/* legend */
+.leg{display:flex;gap:14px;flex-wrap:wrap;font-size:13px;color:var(--ts);margin-bottom:8px}
+.li{display:flex;align-items:center;gap:5px}
+.ld{width:13px;height:13px;border-radius:3px;flex-shrink:0}
+
+/* gantt */
+.gw{overflow-x:auto;margin-bottom:10px}
+.gw svg{display:block}
+
+/* per-panel controls */
+.pctrl{display:flex;align-items:center;gap:10px;flex-wrap:wrap;
+  background:var(--surf2);border-radius:9px;padding:8px 12px;margin-bottom:10px}
+.cb-btn{padding:6px 14px;font-size:14px;font-weight:600;border:2px solid var(--bdr);
+  border-radius:7px;background:var(--surf);color:var(--tp);cursor:pointer;
+  transition:background .1s,border-color .1s;white-space:nowrap}
+.cb-btn:hover{background:#e8e6de;border-color:var(--tm)}
+.cb-btn.play-btn{background:var(--ca);color:#fff;border-color:var(--ca)}
+.cb-btn.play-btn:hover{background:#3828a8}
+.t-lbl{font-size:15px;font-weight:800;color:var(--ca);
+  font-family:'SF Mono','Fira Code',monospace;min-width:70px;text-align:center}
+.spd-sel{font-size:13px;padding:5px 8px;border:2px solid var(--bdr);border-radius:6px;
+  background:var(--surf);color:var(--tp);font-family:inherit;cursor:pointer}
+.prog-wrap{flex:1;min-width:120px}
+.prog-bar{height:8px;background:#d8d4cc;border-radius:4px;overflow:hidden;cursor:pointer;position:relative}
+.prog-fill{height:100%;border-radius:4px;transition:width .05s linear}
+.pf-edf{background:var(--ca)}
+.pf-llf{background:var(--cb)}
+
+/* state cards */
+.state-row{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px}
+.sc{border-radius:8px;padding:8px 13px;font-size:14px;line-height:1.7;border:2px solid}
+.sc-a{background:var(--cal);border-color:var(--cam);color:#2a1f80}
+.sc-b{background:var(--cbl);border-color:var(--cbm);color:#065040}
+.sc-lbl{font-size:11px;font-weight:700;letter-spacing:.5px;margin-bottom:1px;opacity:.65}
+.sc-val{font-family:'SF Mono','Fira Code',monospace;font-size:16px;font-weight:700}
+.sc-sub{font-size:12px;opacity:.72}
+
+/* log */
+.log-hdr{font-size:15px;font-weight:700;color:var(--tp);
+  display:flex;align-items:center;gap:8px;margin-bottom:6px}
+.log-cnt{font-size:12px;font-weight:600;background:var(--csl);color:var(--cs);
+  padding:2px 8px;border-radius:4px}
+.log-box{height:230px;overflow-y:auto;border:1.5px solid var(--bdr);
+  border-radius:8px;background:var(--surf)}
+.log-entry{padding:8px 12px;border-bottom:1px solid var(--surf2);
+  font-size:13px;line-height:1.65;transition:background .15s}
+.log-entry:last-child{border-bottom:none}
+.log-entry.cur{background:#fff7f3;border-left:4px solid var(--cs)}
+.log-entry.done{border-left:4px solid transparent}
+.log-entry.fut{opacity:.38;border-left:4px solid transparent}
+.lt{font-family:'SF Mono','Fira Code',monospace;font-size:14px;font-weight:800;
+  color:var(--tp);margin-right:5px}
+.ba{display:inline-block;padding:1px 7px;border-radius:4px;font-size:12px;
+  font-weight:700;background:var(--cal);color:var(--ca)}
+.bb{display:inline-block;padding:1px 7px;border-radius:4px;font-size:12px;
+  font-weight:700;background:var(--cbl);color:var(--cb)}
+.mono{font-family:'SF Mono','Fira Code',monospace;font-size:12px;color:var(--ts)}
+.win{color:var(--cs);font-weight:700}
+.sw-tag{display:inline-block;font-size:11px;font-weight:600;padding:1px 6px;
+  border-radius:3px;background:var(--csl);color:var(--cs);margin-left:4px}
+.run-tag{display:inline-block;font-size:11px;font-weight:600;padding:1px 6px;
+  border-radius:3px;background:#e6f4ea;color:#1a6630;margin-left:4px}
+
+/* summary */
+.summary{background:var(--surf);border:2px solid var(--bdr);border-radius:12px;
+  padding:1rem 1.5rem;display:flex;align-items:center;gap:20px;flex-wrap:wrap}
+.stitle{font-size:16px;font-weight:700;width:100%;margin-bottom:2px}
+.stat{text-align:center}
+.snum{font-size:26px;font-weight:800}
+.slbl{font-size:12px;color:var(--ts);margin-top:1px}
+.na{color:var(--ca)}.nb{color:var(--cb)}.nc{color:var(--cs)}
+.vd{width:1px;background:var(--bdr);align-self:stretch;min-height:30px}
+.snote{font-size:14px;color:var(--ts);line-height:1.8;flex:1;min-width:200px}
+</style>
+</head>
+<body>
+
+<header>
+  <h1>实时调度算法演示：EDF vs LLF</h1>
+  <h2>Earliest Deadline First &amp; Least Laxity First — 100 ms 完整调度周期</h2>
+  <div class="chips">
+    <span class="chip cA">任务 A：周期 20ms，执行 10ms，U=50%</span>
+    <span class="chip cB">任务 B：周期 50ms，执行 25ms，U=50%</span>
+    <span class="chip cU">总利用率 U=100%，两算法均无截止时间违反</span>
+  </div>
+</header>
+
+<!-- EDF Panel -->
+<div class="panel">
+  <div class="ph"><h3>EDF</h3><span class="abadge">最早截止时间优先</span></div>
+  <div class="rule">每时刻选 <span class="hl">截止时间 D 最小</span> 的就绪任务 &nbsp;|&nbsp; 规则：<span class="hl">min(D_A, D_B)</span><br>平局（D 相等）时：保持当前任务继续运行，避免无谓切换</div>
+  <div class="leg">
+    <div class="li"><div class="ld" style="background:#4535c0"></div>任务A</div>
+    <div class="li"><div class="ld" style="background:#0b7d58"></div>任务B</div>
+    <div class="li"><div class="ld" style="background:#cdc9c0"></div>空闲</div>
+    <div class="li"><div class="ld" style="background:#c43810;border-radius:50%"></div>截止时间</div>
+  </div>
+  <div class="gw"><svg id="svg-edf"></svg></div>
+  <!-- EDF controls -->
+  <div class="pctrl">
+    <button class="cb-btn play-btn" id="edf-play" onclick="P.edf.toggle()">▶ 播放</button>
+    <button class="cb-btn" onclick="P.edf.step(-1)">◀</button>
+    <button class="cb-btn" onclick="P.edf.step(1)">▶</button>
+    <button class="cb-btn" onclick="P.edf.reset()">↺</button>
+    <span class="t-lbl" id="edf-t">t=0</span>
+    <div class="prog-wrap">
+      <div class="prog-bar" id="edf-bar" onclick="P.edf.seek(event)">
+        <div class="prog-fill pf-edf" id="edf-fill" style="width:0%"></div>
+      </div>
+    </div>
+    <select class="spd-sel" id="edf-spd" onchange="P.edf.setSpd()">
+      <option value="800">慢</option>
+      <option value="400" selected>中</option>
+      <option value="150">快</option>
+      <option value="50">极快</option>
+    </select>
+  </div>
+  <div class="state-row" id="edf-state"></div>
+  <div class="log-hdr">调度计算过程 <span class="log-cnt" id="edf-cnt"></span></div>
+  <div class="log-box" id="edf-log"></div>
+</div>
+
+<!-- LLF Panel -->
+<div class="panel">
+  <div class="ph"><h3>LLF</h3><span class="abadge">最低松弛度优先</span></div>
+  <div class="rule">每时刻选 <span class="hl">松弛度 L 最小</span> 的就绪任务 &nbsp;|&nbsp; <span class="hl">L(t) = D − t − c<sub>rem</sub></span><br>
+    事件驱动：仅在①新任务到达 ②当前任务完成 ③松弛度交叉 时重新调度<br>
+    平局（L 相等）时：保持当前任务继续，避免无谓切换</div>
+  <div class="leg">
+    <div class="li"><div class="ld" style="background:#4535c0"></div>任务A</div>
+    <div class="li"><div class="ld" style="background:#0b7d58"></div>任务B</div>
+    <div class="li"><div class="ld" style="background:#cdc9c0"></div>空闲</div>
+    <div class="li"><div class="ld" style="background:#c43810;border-radius:50%"></div>截止时间</div>
+  </div>
+  <div class="gw"><svg id="svg-llf"></svg></div>
+  <!-- LLF controls -->
+  <div class="pctrl">
+    <button class="cb-btn play-btn" id="llf-play" onclick="P.llf.toggle()">▶ 播放</button>
+    <button class="cb-btn" onclick="P.llf.step(-1)">◀</button>
+    <button class="cb-btn" onclick="P.llf.step(1)">▶</button>
+    <button class="cb-btn" onclick="P.llf.reset()">↺</button>
+    <span class="t-lbl" id="llf-t" style="color:var(--cb)">t=0</span>
+    <div class="prog-wrap">
+      <div class="prog-bar" id="llf-bar" onclick="P.llf.seek(event)">
+        <div class="prog-fill pf-llf" id="llf-fill" style="width:0%"></div>
+      </div>
+    </div>
+    <select class="spd-sel" id="llf-spd" onchange="P.llf.setSpd()">
+      <option value="800">慢</option>
+      <option value="400" selected>中</option>
+      <option value="150">快</option>
+      <option value="50">极快</option>
+    </select>
+  </div>
+  <div class="state-row" id="llf-state"></div>
+  <div class="log-hdr">调度计算过程 <span class="log-cnt" id="llf-cnt"></span></div>
+  <div class="log-box" id="llf-log"></div>
+</div>
+
+<!-- Summary -->
+<div class="summary">
+  <div class="stitle">算法对比总结（100 ms 周期）</div>
+  <div class="stat"><div class="snum na">8</div><div class="slbl">EDF 切换次数</div></div>
+  <div class="vd"></div>
+  <div class="stat"><div class="snum nb">8</div><div class="slbl">LLF 切换次数</div></div>
+  <div class="vd"></div>
+  <div class="stat"><div class="snum nc">0</div><div class="slbl">切换次数差值</div></div>
+  <div class="vd"></div>
+  <div class="snote">对于本题任务参数，事件驱动 LLF 与 EDF 产生完全相同的调度序列，切换次数一致（各 8 次）。两算法均无截止时间违反。LLF 的优势在于能感知松弛度紧迫程度；EDF 实现更简单，仅需比较截止时间。</div>
+</div>
+
+<script>
+const T = 100;
+const CW = 11, CH = 42, LW = 56, PT = 14, PB = 26;
+const SW = LW + T*CW + 14, SH = PT + CH*2 + 8 + PB;
+
+function mk(p,c){const a=[];for(let s=0;s<T;s+=p)a.push({release:s,deadline:s+p,remaining:c,idx:s/p+1});return a;}
+
+function simEDF(){
+  const A=mk(20,10),B=mk(50,25),out=[];
+  let prevTask='idle';
+  for(let t=0;t<T;t++){
+    const rA=A.filter(i=>i.release<=t&&i.remaining>0);
+    const rB=B.filter(i=>i.release<=t&&i.remaining>0);
+    const iA=rA[0]||null,iB=rB[0]||null;
+    const dA=iA?iA.deadline:null,dB=iB?iB.deadline:null;
+    const remA=iA?iA.remaining:null,remB=iB?iB.remaining:null;
+    const idxA=iA?iA.idx:null,idxB=iB?iB.idx:null;
+    let task='idle',chosen=null;
+    if(iA&&iB){
+      if(dA===dB){
+        // Tie: keep current task running to avoid unnecessary preemption
+        if(prevTask==='B'){chosen=iB;task='B';}
+        else{chosen=iA;task='A';}
+      } else if(dA<dB){chosen=iA;task='A';}
+      else{chosen=iB;task='B';}
+    } else if(iA){chosen=iA;task='A';}
+    else if(iB){chosen=iB;task='B';}
+    out.push({t,task,dA,dB,remA,remB,idxA,idxB,activeIdx:task==='A'?idxA:task==='B'?idxB:null});
+    prevTask=task;
+    if(chosen)chosen.remaining--;
+  }
+  return out;
+}
+
+function simLLF(){
+  // Event-driven LLF: recalculate only at (1) task release, (2) completion, (3) laxity crossover
+  const Ainsts=mk(20,10), Binsts=mk(50,25);
+  const out=new Array(T).fill(null);
+  let t=0, prevTask='idle';
+
+  while(t<T){
+    const rA=Ainsts.filter(i=>i.release<=t&&i.remaining>0);
+    const rB=Binsts.filter(i=>i.release<=t&&i.remaining>0);
+    const iA=rA[0]||null, iB=rB[0]||null;
+
+    if(!iA&&!iB){
+      out[t]={t,task:'idle',dA:null,dB:null,remA:null,remB:null,lA:null,lB:null,idxA:null,idxB:null,activeIdx:null};
+      t++; continue;
+    }
+
+    const dA=iA?iA.deadline:null, dB=iB?iB.deadline:null;
+    const remA=iA?iA.remaining:null, remB=iB?iB.remaining:null;
+    const lA=iA?dA-t-remA:null, lB=iB?dB-t-remB:null;
+    const idxA=iA?iA.idx:null, idxB=iB?iB.idx:null;
+
+    let task='idle', chosen=null, idleInst=null, lChosen=null, lIdle=null;
+    if(iA&&iB){
+      if(lA<lB)      {chosen=iA;task='A';idleInst=iB;lChosen=lA;lIdle=lB;}
+      else if(lB<lA) {chosen=iB;task='B';idleInst=iA;lChosen=lB;lIdle=lA;}
+      else {
+        if(prevTask==='B'){chosen=iB;task='B';idleInst=iA;lChosen=lB;lIdle=lA;}
+        else              {chosen=iA;task='A';idleInst=iB;lChosen=lA;lIdle=lB;}
+      }
+    } else if(iA){chosen=iA;task='A';lChosen=lA;}
+    else           {chosen=iB;task='B';lChosen=lB;}
+
+    // Compute until next event
+    let until=T;
+    until=Math.min(until, t+chosen.remaining);
+    [...Ainsts,...Binsts].forEach(i=>{if(i.release>t&&i.remaining>0)until=Math.min(until,i.release);});
+    // Laxity crossover: idle laxity drops to chosen laxity after (lIdle-lChosen) ms
+    if(idleInst&&lIdle!==null&&lIdle>lChosen) until=Math.min(until, t+(lIdle-lChosen));
+
+    const runTime=Math.max(1, until-t);
+
+    for(let k=t;k<t+runTime&&k<T;k++){
+      out[k]={t:k,task,dA,dB,remA,remB,lA,lB,idxA,idxB,
+              activeIdx:task==='A'?idxA:task==='B'?idxB:null};
+    }
+    chosen.remaining-=runTime;
+    prevTask=task;
+    t+=runTime;
+  }
+  return out;
+}
+
+const EDF = simEDF(), LLF = simLLF();
+
+function initSVG(id, sched){
+  const svg=document.getElementById(id);
+  svg.setAttribute('width',SW);svg.setAttribute('height',SH);
+  const ns=svg.namespaceURI;
+  const el=(tag,at)=>{const e=document.createElementNS(ns,tag);Object.entries(at).forEach(([k,v])=>e.setAttribute(k,v));return e;};
+  const tx=(x,y,s,at={})=>{const e=el('text',{x,y,'font-family':"'PingFang SC',sans-serif",...at});e.textContent=s;return e;};
+  [['任务A','#4535c0',0],['任务B','#0b7d58',1]].forEach(([lbl,clr,ri])=>{
+    svg.appendChild(tx(LW-6,PT+ri*CH+CH/2+5,lbl,{'text-anchor':'end','font-size':'13','font-weight':'700',fill:clr}));
+  });
+  for(let t=0;t<T;t++){
+    ['A','B'].forEach((row,ri)=>{
+      svg.appendChild(el('rect',{id:`${id}-${row}-${t}`,x:LW+t*CW,y:PT+ri*CH+2,width:CW-1,height:CH-4,fill:'#e6e3dc',rx:'2'}));
+    });
+  }
+
+  // Instance labels: find contiguous run blocks per row, draw centered label
+  ['A','B'].forEach((row, ri) => {
+    const rowY = PT + ri*CH;
+    const centerY = rowY + CH/2 + 5;
+    let blockStart = null, blockKey = null;
+    const flush = (end) => {
+      if (blockKey === null || blockKey === 'idle') return;
+      const spanPx = (end - blockStart) * CW;
+      if (spanPx < 10) return; // too narrow to label
+      const cx = LW + blockStart*CW + spanPx/2;
+      // task letter large, subscript number smaller below
+      const letter = blockKey[0];
+      const num = blockKey.slice(1);
+      // Draw on a clip-safe group
+      const g = el('g', {id: `${id}-lbl-${row}-${blockStart}`, 'pointer-events':'none'});
+      // Main letter
+      const lx = spanPx >= 20 ? cx - (num?4:0) : cx;
+      const lt = el('text',{x:lx, y:centerY-3,
+        'text-anchor':'middle','font-size':'13','font-weight':'800',
+        'font-family':"'PingFang SC',sans-serif",
+        fill: row==='A'?'#1a1060':'#063328'});
+      lt.textContent = letter;
+      g.appendChild(lt);
+      // Subscript number (smaller, offset right+down)
+      if (num && spanPx >= 18) {
+        const nt = el('text',{x:lx+7, y:centerY+4,
+          'text-anchor':'middle','font-size':'10','font-weight':'800',
+          'font-family':"'PingFang SC',sans-serif",
+          fill: row==='A'?'#26185a':'#063328'});
+        nt.textContent = num;
+        g.appendChild(nt);
+      }
+      svg.appendChild(g);
+    };
+    for(let t=0;t<T;t++){
+      const s = sched[t];
+      const key = s.task===row ? (row + s.activeIdx) : 'idle';
+      if (key !== blockKey) {
+        flush(t);
+        blockStart = t; blockKey = key;
+      }
+    }
+    flush(T);
+  });
+
+  [20,40,60,80,100].forEach(d=>{
+    if(d>T)return;
+    const x=LW+d*CW;
+    svg.appendChild(el('line',{x1:x,y1:PT,x2:x,y2:PT+CH-3,stroke:'#8a80e4','stroke-width':'2','stroke-dasharray':'3 2'}));
+    svg.appendChild(el('polygon',{points:`${x-4},${PT+CH-2} ${x+4},${PT+CH-2} ${x},${PT+CH+5}`,fill:'#4535c0'}));
+  });
+  [50,100].forEach(d=>{
+    if(d>T)return;
+    const x=LW+d*CW,y0=PT+CH;
+    svg.appendChild(el('line',{x1:x,y1:y0,x2:x,y2:y0+CH-3,stroke:'#46c498','stroke-width':'2','stroke-dasharray':'3 2'}));
+    svg.appendChild(el('polygon',{points:`${x-4},${y0+CH-2} ${x+4},${y0+CH-2} ${x},${y0+CH+5}`,fill:'#0b7d58'}));
+  });
+  const axY=PT+CH*2+6;
+  svg.appendChild(el('line',{x1:LW,y1:axY,x2:LW+T*CW,y2:axY,stroke:'#b0aca4','stroke-width':'1'}));
+  for(let t=0;t<=T;t+=5){
+    const x=LW+t*CW;
+    svg.appendChild(el('line',{x1:x,y1:axY,x2:x,y2:axY+(t%10===0?6:3),stroke:'#b0aca4','stroke-width':'0.5'}));
+    if(t%10===0)svg.appendChild(tx(x,axY+14,t,{'text-anchor':'middle','font-size':'11',fill:'#888078'}));
+  }
+  svg.appendChild(tx(LW+T*CW+3,axY+4,'ms',{'font-size':'10',fill:'#888078'}));
+  svg.appendChild(el('line',{id:`${id}-cur`,x1:LW,y1:PT-2,x2:LW,y2:PT+CH*2+4,stroke:'#c43810','stroke-width':'4'}));
+}
+
+// Extract run blocks from flat schedule
+function getBlocks(sched){
+  const blocks=[];
+  let i=0;
+  while(i<T){
+    const s=sched[i];
+    let j=i+1;
+    while(j<T && sched[j].task===s.task && sched[j].activeIdx===s.activeIdx) j++;
+    blocks.push({
+      from:i, to:j,           // [from, to)
+      task:s.task,
+      activeIdx:s.activeIdx,
+      dA:s.dA, dB:s.dB,
+      remA:s.remA, remB:s.remB,
+      lA:s.lA, lB:s.lB,
+      idxA:s.idxA, idxB:s.idxB,
+    });
+    i=j;
+  }
+  return blocks;
+}
+
+function buildLog(sched,boxId,cntId,isLLF){
+  const box=document.getElementById(boxId);
+  box.innerHTML='';
+  const blocks=getBlocks(sched);
+  let swN=0;
+
+  let blockCount = 0;
+  blocks.forEach((b,bi)=>{
+    if(b.task==='idle') return; // skip idle blocks
+    const prev=blocks.slice(0,bi).filter(x=>x.task!=='idle').pop()||null;
+    const isSw = prev && (prev.task!==b.task);
+    if(isSw) swN++;
+    const isFirst = blockCount===0;
+    blockCount++;
+
+    const instName = b.task==='A'?'A'+b.activeIdx:'B'+b.activeIdx;
+    const tb = b.task==='A'
+      ? `<span class="ba">${instName}</span>`
+      : `<span class="bb">${instName}</span>`;
+    const tag = isSw
+      ? '<span class="sw-tag">切换</span>'
+      : (isFirst ? '' : '<span class="run-tag">调度</span>');
+
+    // Time range label
+    const tRange = `<span style="font-family:'SF Mono','Fira Code',monospace;font-size:13px;color:var(--tm)">t=${b.from}–${b.to}ms (${b.to-b.from}ms)</span>`;
+
+    let calc='';
+    if(isLLF){
+      if(b.lA!==null&&b.lB!==null){
+        const w=b.lA<=b.lB?'A':'B', l=w==='A'?'B':'A';
+        const lw=w==='A'?b.lA:b.lB, ll=w==='A'?b.lB:b.lA;
+        const instW=w==='A'?'A'+b.idxA:'B'+b.idxB;
+        const tieNote = b.lA===b.lB
+          ? `<div class="win mono">→ L 相等，保持 ${instW} 继续运行</div>`
+          : `<div class="win mono">→ L<sub>${w}</sub>=${lw} &lt; L<sub>${l}</sub>=${ll}，选 ${instW}</div>`;
+        const crossNote = isSw
+          ? `<div class="mono" style="color:var(--cs)">松弛度交叉：L<sub>${l}</sub> 降至 ${ll}，等于 L<sub>${w}</sub></div>`
+          : '';
+        calc = crossNote
+          +`<div class="mono">L<sub>A</sub>=${b.dA}−${b.from}−${b.remA}=<b>${b.lA}</b> &nbsp; L<sub>B</sub>=${b.dB}−${b.from}−${b.remB}=<b>${b.lB}</b></div>`
+          +tieNote;
+      } else if(b.lA!==null){
+        const note = isSw?`<div class="mono" style="color:#86847e">B 无就绪实例，仅 A${b.idxA} 就绪</div>`:'';
+        calc=note+`<div class="mono">L<sub>A</sub>=${b.dA}−${b.from}−${b.remA}=<b>${b.lA}</b></div><div class="win mono">→ 选 A${b.idxA}</div>`;
+      } else if(b.lB!==null){
+        const note = isSw?`<div class="mono" style="color:#86847e">A 无就绪实例，仅 B${b.idxB} 就绪</div>`:'';
+        calc=note+`<div class="mono">L<sub>B</sub>=${b.dB}−${b.from}−${b.remB}=<b>${b.lB}</b></div><div class="win mono">→ 选 B${b.idxB}</div>`;
+      }
+    } else {
+      // EDF
+      if(b.dA!==null&&b.dB!==null){
+        const w=b.dA<=b.dB?'A':'B', l=w==='A'?'B':'A';
+        const dw=w==='A'?b.dA:b.dB, dl=w==='A'?b.dB:b.dA;
+        const instW=w==='A'?'A'+b.idxA:'B'+b.idxB, instL=l==='A'?'A'+b.idxA:'B'+b.idxB;
+        const tieNote = b.dA===b.dB
+          ? `<div class="win mono">→ D<sub>A</sub>=D<sub>B</sub>=${b.dA}（平局），保持 ${instW} 继续运行</div>`
+          : `<div class="win mono">→ D<sub>${w}</sub>=${dw} &lt; D<sub>${l}</sub>=${dl}，选 ${instW}</div>`;
+        calc=`<div class="mono">D<sub>A</sub>=<b>${b.dA}</b>（${instW}，剩${b.remA}ms）&nbsp; D<sub>B</sub>=<b>${b.dB}</b>（${instL}，剩${b.remB}ms）</div>`+tieNote;
+      } else if(b.dA!==null){
+        calc=`<div class="mono">D<sub>A</sub>=<b>${b.dA}</b>（A${b.idxA}，剩${b.remA}ms，仅A就绪）</div><div class="win mono">→ 选 A${b.idxA}</div>`;
+      } else if(b.dB!==null){
+        calc=`<div class="mono">D<sub>B</sub>=<b>${b.dB}</b>（B${b.idxB}，剩${b.remB}ms，仅B就绪）</div><div class="win mono">→ 选 B${b.idxB}</div>`;
+      }
+    }
+
+    const div=document.createElement('div');
+    div.className='log-entry fut';
+    div.id=`${boxId}-b${b.from}`;  // keyed by start time
+    div.innerHTML=`<div style="margin-bottom:3px;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+      <span class="lt">t=${b.from}</span>${tb}${tag}${tRange}
+    </div>${calc}`;
+    box.appendChild(div);
+  });
+
+  document.getElementById(cntId).textContent=swN+' 次切换';
+}
+
+function updateLog(boxId,t,sched){
+  const box=document.getElementById(boxId);
+  // find which block t belongs to
+  let curFrom=-1;
+  const blocks=getBlocks(sched);
+  for(const b of blocks){
+    if(b.task!=='idle' && t>=b.from && t<b.to){ curFrom=b.from; break; }
+    if(b.task==='idle' && t>=b.from && t<b.to){ curFrom=-1; break; }
+  }
+  // update all block rows
+  blocks.filter(b=>b.task!=='idle').forEach(b=>{
+    const r=document.getElementById(`${boxId}-b${b.from}`);
+    if(!r)return;
+    if(b.to<=t) r.className='log-entry done';
+    else if(b.from<=t && t<b.to) r.className='log-entry cur';
+    else r.className='log-entry fut';
+  });
+  // scroll current into view
+  const curEl=curFrom>=0 ? document.getElementById(`${boxId}-b${curFrom}`) : null;
+  if(curEl) box.scrollTop=curEl.offsetTop-box.offsetTop-box.clientHeight/2+curEl.clientHeight/2;
+}
+
+function renderState(sched,t,cid,isLLF){
+  const s=sched[Math.min(t,T-1)];
+  const instA = s.idxA ? 'A'+s.idxA : 'A—';
+  const instB = s.idxB ? 'B'+s.idxB : 'B—';
+  const rA=s.task==='A'?' ◀ 运行中':'',rB=s.task==='B'?' ◀ 运行中':'';
+  const dA=s.dA??'—',dB=s.dB??'—',remA=s.remA??'—',remB=s.remB??'—';
+  let ah,bh;
+  if(isLLF){
+    const lA=s.lA??'—',lB=s.lB??'—';
+    ah=`<div class="sc sc-a"><div class="sc-lbl">${instA}${rA}</div><div class="sc-val">L<sub>A</sub> = ${lA}</div><div class="sc-sub">截止 ${dA}ms，剩余 ${remA}ms</div></div>`;
+    bh=`<div class="sc sc-b"><div class="sc-lbl">${instB}${rB}</div><div class="sc-val">L<sub>B</sub> = ${lB}</div><div class="sc-sub">截止 ${dB}ms，剩余 ${remB}ms</div></div>`;
+  } else {
+    ah=`<div class="sc sc-a"><div class="sc-lbl">${instA}${rA}</div><div class="sc-val">D<sub>A</sub> = ${dA}</div><div class="sc-sub">剩余执行 ${remA}ms</div></div>`;
+    bh=`<div class="sc sc-b"><div class="sc-lbl">${instB}${rB}</div><div class="sc-val">D<sub>B</sub> = ${dB}</div><div class="sc-sub">剩余执行 ${remB}ms</div></div>`;
+  }
+  document.getElementById(cid).innerHTML=ah+bh;
+}
+
+function updateGantt(sched,svgId,t){
+  const blocks=getBlocks(sched);
+  let curBlock=null;
+  for(const b of blocks){if(t>=b.from&&t<b.to){curBlock=b;break;}}
+  for(let i=0;i<T;i++){
+    const s=sched[i];
+    ['A','B'].forEach(row=>{
+      const r=document.getElementById(`${svgId}-${row}-${i}`);
+      if(!r)return;
+      const inCur=curBlock&&i>=curBlock.from&&i<curBlock.to;
+      if(inCur){
+        r.setAttribute('fill',s.task===row?(row==='A'?'#4535c0':'#0b7d58'):'#c8c4bc');
+      } else if(i<t){
+        r.setAttribute('fill',s.task===row?(row==='A'?'#9089d8':'#4dc49a'):'#d8d5ce');
+      } else {
+        r.setAttribute('fill','#e6e3dc');
+      }
+    });
+  }
+  const cur=document.getElementById(`${svgId}-cur`);
+  if(cur){const x=LW+t*CW+CW/2;cur.setAttribute('x1',x);cur.setAttribute('x2',x);}
+}
+
+// Per-algorithm player factory
+function makePlayer(id, sched, svgId, tLblId, fillId, barId, btnId, spdId, isLLF, logId, stateId) {
+  const blocks = getBlocks(sched).filter(b=>b.task!=='idle');
+  let curBlock = 0, playing = false, timer = null;
+  function spd(){ return parseInt(document.getElementById(spdId).value); }
+  function curT(){ return blocks[curBlock]?.from ?? 0; }
+
+  function render(bi){
+    curBlock = Math.max(0, Math.min(blocks.length-1, bi));
+    const t = curT();
+    document.getElementById(tLblId).textContent = 't='+t+'ms';
+    document.getElementById(fillId).style.width = (t/(T-1)*100)+'%';
+    updateGantt(sched, svgId, t);
+    renderState(sched, t, stateId, isLLF);
+    updateLog(logId, t, sched);
+  }
+  function tick(){
+    if(!playing)return;
+    render(curBlock);
+    if(curBlock<blocks.length-1){
+      curBlock++;
+      timer=setTimeout(tick, spd());
+    } else {
+      playing=false;
+      document.getElementById(btnId).textContent='▶ 播放';
+    }
+  }
+  return {
+    toggle(){
+      playing=!playing;
+      document.getElementById(btnId).textContent=playing?'⏸ 暂停':'▶ 播放';
+      if(playing){ if(curBlock>=blocks.length-1)curBlock=0; tick(); }
+      else clearTimeout(timer);
+    },
+    step(d){
+      if(playing){playing=false;clearTimeout(timer);document.getElementById(btnId).textContent='▶ 播放';}
+      render(curBlock+d);
+    },
+    reset(){
+      if(playing){playing=false;clearTimeout(timer);document.getElementById(btnId).textContent='▶ 播放';}
+      curBlock=0; render(0);
+    },
+    seek(e){
+      const bar=document.getElementById(barId);
+      const t=Math.round(e.offsetX/bar.clientWidth*(T-1));
+      if(playing){playing=false;clearTimeout(timer);document.getElementById(btnId).textContent='▶ 播放';}
+      // find block containing t
+      const bi=blocks.findIndex(b=>t>=b.from && t<b.to);
+      render(bi>=0?bi:0);
+    },
+    setSpd(){},
+    render
+  };
+}
+
+// Init
+initSVG('svg-edf', EDF);
+initSVG('svg-llf', LLF);
+buildLog(EDF,'edf-log','edf-cnt',false);
+buildLog(LLF,'llf-log','llf-cnt',true);
+
+const P = {
+  edf: makePlayer('edf', EDF, 'svg-edf','edf-t','edf-fill','edf-bar','edf-play','edf-spd',false,'edf-log','edf-state'),
+  llf: makePlayer('llf', LLF, 'svg-llf','llf-t','llf-fill','llf-bar','llf-play','llf-spd',true,'llf-log','llf-state'),
+};
+P.edf.render(0);
+P.llf.render(0);
+</script>
+</body>
+</html>

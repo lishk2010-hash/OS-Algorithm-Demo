@@ -1,0 +1,420 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>分时系统进程切换 — CPU 现场保护与恢复</title>
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  font-family: 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
+  background: #f5f4f0;
+  color: #1a1a18;
+  min-height: 100vh;
+  padding: 2rem 1.5rem;
+  font-size: 18px;
+}
+
+.container {
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
+header {
+  text-align: center;
+  margin-bottom: 2rem;
+}
+header h1 {
+  font-size: 32px;
+  font-weight: 500;
+  color: #1a1a18;
+  margin-bottom: 10px;
+}
+header p {
+  font-size: 20px;
+  color: #73726c;
+}
+
+.card {
+  background: #fff;
+  border: 0.5px solid #d3d1c7;
+  border-radius: 16px;
+  padding: 2rem 2.5rem;
+  margin-bottom: 1.5rem;
+}
+
+#dots { text-align: center; margin-bottom: 1.5rem; }
+.step-dot {
+  width: 16px; height: 16px;
+  border-radius: 50%;
+  background: #d3d1c7;
+  display: inline-block;
+  margin: 0 6px;
+  transition: background .25s;
+}
+.step-dot.active { background: #534AB7; }
+.step-dot.done   { background: #5DCAA5; }
+
+.grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 24px;
+  align-items: start;
+  margin-bottom: 1.5rem;
+}
+@media (max-width: 800px) { .grid { grid-template-columns: 1fr; } }
+
+.panel-title {
+  font-size: 20px;
+  font-weight: 500;
+  margin-bottom: 14px;
+  color: #1a1a18;
+}
+
+.highlight-box {
+  border-radius: 10px;
+  padding: 16px 20px;
+  margin: 10px 0;
+  font-size: 18px;
+  border: 1px solid #d3d1c7;
+  line-height: 1.75;
+  background: #fff;
+}
+.highlight-coral { border-color: #F0997B; }
+.highlight-teal  { border-color: #5DCAA5; }
+
+.code-block {
+  font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+  font-size: 18px;
+  line-height: 2.0;
+  color: #5F5E5A;
+  padding: 10px 0;
+}
+.code-hl { color: #534AB7; font-weight: 500; }
+
+.stack-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border: 1px solid #d3d1c7;
+  border-radius: 6px;
+  margin: 5px 0;
+  padding: 8px 16px;
+  font-size: 18px;
+}
+.stack-push { background: #FAECE7; border-color: #F0997B; color: #712B13; }
+.stack-pop  { background: #E1F5EE; border-color: #9FE1CB; color: #085041; }
+.stack-idle { background: #f5f4f0; color: #5F5E5A; }
+
+.reg-box {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid #d3d1c7;
+  border-radius: 6px;
+  font-size: 17px;
+  padding: 6px 12px;
+  margin: 3px;
+  min-width: 64px;
+}
+.reg-saved    { background: #EEEDFE; border-color: #AFA9EC; color: #3C3489; }
+.reg-restored { background: #E1F5EE; border-color: #5DCAA5; color: #085041; }
+.reg-hw       { background: #FAECE7; border-color: #F0997B; color: #712B13; }
+.reg-pending  { background: #FAECE7; border-color: #F0997B; color: #712B13; }
+
+.pcb-table {
+  border: 1px solid #d3d1c7;
+  border-radius: 10px;
+  overflow: hidden;
+  font-size: 18px;
+  width: 100%;
+}
+.pcb-header { padding: 8px 16px; background: #f5f4f0; font-weight: 500; border-bottom: 1px solid #d3d1c7; }
+.pcb-row { padding: 7px 16px; border-bottom: 1px solid #f5f4f0; color: #3d3d3a; }
+.pcb-row:last-child { border-bottom: none; }
+.pcb-highlight { background: #EEEDFE; color: #3C3489; }
+
+.ready-queue {
+  border: 1px solid #5DCAA5;
+  border-radius: 10px;
+  padding: 16px 18px;
+  background: #E1F5EE;
+  font-size: 18px;
+  color: #085041;
+  line-height: 1.8;
+}
+.ready-queue b { font-weight: 500; font-size: 20px; display: block; margin-bottom: 6px; }
+
+.success-box {
+  border: 1px solid #5DCAA5;
+  border-radius: 10px;
+  padding: 18px 20px;
+  background: #E1F5EE;
+  font-size: 18px;
+  color: #0F6E56;
+  line-height: 1.9;
+}
+.success-box b { font-size: 20px; font-weight: 500; color: #085041; display: block; margin-bottom: 8px; }
+
+.note { font-size: 16px; color: #888780; line-height: 1.7; margin-top: 10px; }
+
+.nav {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 1rem;
+}
+.nav-label { font-size: 18px; color: #888780; }
+button {
+  padding: 12px 32px;
+  font-size: 18px;
+  font-family: inherit;
+  background: transparent;
+  border: 1px solid #b4b2a9;
+  border-radius: 10px;
+  cursor: pointer;
+  color: #3d3d3a;
+  transition: background .15s, border-color .15s, transform .1s;
+}
+button:hover:not(:disabled) { background: #f5f4f0; border-color: #888780; }
+button:active:not(:disabled) { transform: scale(0.97); }
+button:disabled { opacity: 0.35; cursor: default; }
+</style>
+</head>
+<body>
+<div class="container">
+
+<header>
+  <h1>分时系统进程切换：CPU 现场保护与恢复</h1>
+  <p>Time-Sharing OS Process Switch: CPU Context Save &amp; Restore</p>
+  <p>以 Intel 8088 为例，逐步演示时间片到时后操作系统的完整处理流程</p>
+</header>
+
+<div class="card">
+  <div id="dots"></div>
+  <div class="grid">
+    <div id="left-panel"></div>
+    <div id="right-panel"></div>
+  </div>
+  <div class="nav">
+    <button id="btn-prev" onclick="go(-1)">← 上一步</button>
+    <span class="nav-label" id="step-label"></span>
+    <button id="btn-next" onclick="go(1)">下一步 →</button>
+  </div>
+</div>
+
+</div>
+<script>
+const steps = [
+  {
+    left: `
+<div class="panel-title">① 定时器触发中断（硬件层）</div>
+<div class="highlight-box highlight-coral">
+  <b style="color:#993C1D">8259A 中断控制器 → IRQ0 定时器中断</b><br>
+  时间片计数器归零，8259A 向 CPU 发出 INT 信号。<br><br>
+  CPU 在当前指令执行完毕后响应中断，<b>自动</b>执行以下硬件动作：
+</div>
+<div style="margin-top:8px">
+  <div class="stack-row stack-push">📥 FLAGS 自动压栈（保存标志寄存器）</div>
+  <div class="stack-row stack-push">📥 CS 自动压栈（代码段寄存器）</div>
+  <div class="stack-row stack-push">📥 IP 自动压栈（指令指针，即断点地址）</div>
+</div>
+<p class="note">此时 CPU 关中断（IF=0），防止嵌套中断<br>转入内核中断向量表，跳转到时钟中断处理程序入口</p>`,
+    right: `
+<div class="panel-title">内核栈（进程A的）</div>
+<div class="stack-row stack-push" style="justify-content:space-between"><span>FLAGS</span><span style="font-size:16px;color:#888780">← SP</span></div>
+<div class="stack-row stack-push"><span>CS</span></div>
+<div class="stack-row stack-push"><span>IP（返回地址）</span></div>
+<div class="stack-row stack-idle"><span>…原来的栈内容…</span></div>
+<p class="note">⬆ 硬件自动完成，无需任何软件指令<br>SP 向低地址方向移动 6 字节（3×2字节）</p>`
+  },
+  {
+    left: `
+<div class="panel-title">② 保存现场：内核保存通用寄存器到内核栈</div>
+<div class="highlight-box">
+  进入时钟中断服务程序（ISR）后，内核立即用 <span class="code-hl">PUSH</span> 指令保存其余寄存器：
+</div>
+<div class="code-block">
+<span class="code-hl">PUSH AX</span><br>
+<span class="code-hl">PUSH BX</span><br>
+<span class="code-hl">PUSH CX</span><br>
+<span class="code-hl">PUSH DX</span><br>
+<span class="code-hl">PUSH SI</span><br>
+<span class="code-hl">PUSH DI</span><br>
+<span class="code-hl">PUSH BP</span><br>
+<span class="code-hl">PUSH DS</span><br>
+<span class="code-hl">PUSH ES</span>
+</div>
+<p class="note">注意：SP 寄存器此时已是内核栈的 SP，<br>进程 A 原来的 SS:SP 将单独记录在 PCB 中</p>`,
+    right: `
+<div class="panel-title">寄存器保存状态</div>
+<div>
+${['AX','BX','CX','DX','SI','DI','BP','DS','ES'].map(r=>`<span class="reg-box reg-saved">${r} ✓</span>`).join('')}
+</div>
+<div style="margin-top:10px">
+${['FLAGS','CS','IP'].map(r=>`<span class="reg-box reg-hw">${r} HW</span>`).join('')}
+</div>
+<p class="note" style="margin-top:10px">
+<span style="color:#993C1D">■</span> 硬件自动压栈 &nbsp;
+<span style="color:#534AB7">■</span> 软件 PUSH 保存
+</p>`
+  },
+  {
+    left: `
+<div class="panel-title">③ 更新进程A的PCB（进程控制块）</div>
+<div class="highlight-box">
+  内核将栈顶指针（SS:SP）记录到进程 A 的 PCB 中，完成"现场快照"存档。
+</div>
+<div class="code-block">
+<span class="code-hl">MOV  [PCB_A.sp], SP</span><br>
+<span class="code-hl">MOV  [PCB_A.ss], SS</span><br><br>
+<span style="color:#888780">; 更新进程状态</span><br>
+<span class="code-hl">MOV  [PCB_A.state], READY</span><br>
+<span style="color:#888780">; 放入就绪队列</span>
+</div>
+<p class="note">所有寄存器值通过 SP 可以找回——<br>整个 CPU 现场就"冻结"在内核栈里了</p>`,
+    right: `
+<div class="panel-title">进程A的 PCB 结构</div>
+<div class="pcb-table">
+  <div class="pcb-header">PCB_A</div>
+  <div class="pcb-row">pid = A</div>
+  <div class="pcb-row pcb-highlight">state = READY ← 刚更新</div>
+  <div class="pcb-row pcb-highlight">kernel_sp = 0xXXXX ← 刚写入</div>
+  <div class="pcb-row">priority = 5</div>
+  <div class="pcb-row">时间片计数 = 0</div>
+  <div class="pcb-row">页表基址 …</div>
+</div>`
+  },
+  {
+    left: `
+<div class="panel-title">④ 调度器选择下一个进程（进程B）</div>
+<div class="highlight-box">
+  时钟 ISR 调用调度器（scheduler），从就绪队列中<br>
+  按调度算法（如时间片轮转 RR）选出下一个进程。
+</div>
+<div class="code-block">
+<span style="color:#888780">; 简化示意</span><br>
+<span class="code-hl">CALL scheduler</span><br>
+<span style="color:#888780">; 返回值: next_pcb = &amp;PCB_B</span>
+</div>
+<p class="note">就绪队列示意：<br>HEAD → [进程B] → [进程C] → [进程A] → …</p>`,
+    right: `
+<div class="panel-title">调度决策结果</div>
+<div class="ready-queue">
+  <b>✓ 选中：进程 B</b>
+  算法：Round-Robin（时间片轮转）<br>
+  进程B状态：READY → RUNNING
+</div>
+<p class="note" style="margin-top:10px">此时尚未切换 CPU 寄存器，<br>只是确定了"下一棒"是谁</p>`
+  },
+  {
+    left: `
+<div class="panel-title">⑤ 切换内核栈：SS:SP 指向进程B的内核栈</div>
+<div class="highlight-box highlight-coral">
+  这是整个切换过程中最关键的一条指令——<br>
+  切换栈，意味着切换了"运行上下文"。
+</div>
+<div class="code-block">
+<span style="color:#888780">; 从PCB_B 取出上次保存的内核栈指针</span><br>
+<span class="code-hl">MOV  SS, [PCB_B.ss]</span><br>
+<span class="code-hl">MOV  SP, [PCB_B.sp]</span>
+</div>
+<p class="note">⚠ 8088 中 MOV SS 后下一条指令自动关中断，<br>保证 SS:SP 原子更新<br><br>
+切换后，内核栈里装的是进程B上次被切换时留下的"冻结现场"</p>`,
+    right: `
+<div class="panel-title">内核栈（现在是进程B的）</div>
+<div class="stack-row stack-idle"><span>…进程B原来的栈内容…</span></div>
+<div class="stack-row stack-pop"><span>ES（待恢复）</span></div>
+<div class="stack-row stack-pop"><span>DS / BP / DI / SI</span></div>
+<div class="stack-row stack-pop"><span>DX / CX / BX</span></div>
+<div class="stack-row stack-pop" style="border-color:#5DCAA5"><span>AX</span><span style="font-size:16px;color:#888780">← SP 现在指这里</span></div>
+<div class="stack-row stack-push"><span>FLAGS（B的）</span></div>
+<div class="stack-row stack-push"><span>CS（B的）</span></div>
+<div class="stack-row stack-push"><span>IP（B的返回地址）</span></div>`
+  },
+  {
+    left: `
+<div class="panel-title">⑥ 恢复进程B的通用寄存器</div>
+<div class="highlight-box">
+  用 <span class="code-hl">POP</span> 指令依次从进程B的内核栈中<br>
+  弹出上次保存的寄存器值。顺序与保存时相反。
+</div>
+<div class="code-block">
+<span class="code-hl">POP  ES</span><br>
+<span class="code-hl">POP  DS</span><br>
+<span class="code-hl">POP  BP</span><br>
+<span class="code-hl">POP  DI</span><br>
+<span class="code-hl">POP  SI</span><br>
+<span class="code-hl">POP  DX</span><br>
+<span class="code-hl">POP  CX</span><br>
+<span class="code-hl">POP  BX</span><br>
+<span class="code-hl">POP  AX</span>
+</div>
+<p class="note">此后 CPU 通用寄存器已经是"进程B的值"<br>栈顶剩余：FLAGS、CS、IP（供 IRET 使用）</p>`,
+    right: `
+<div class="panel-title">寄存器恢复状态（进程B）</div>
+<div>
+${['AX','BX','CX','DX','SI','DI','BP','DS','ES'].map(r=>`<span class="reg-box reg-restored">${r} ✓</span>`).join('')}
+</div>
+<div style="margin-top:10px">
+${['FLAGS','CS','IP'].map(r=>`<span class="reg-box reg-pending">${r} 待IRET</span>`).join('')}
+</div>
+<p class="note" style="margin-top:10px">
+<span style="color:#085041">■</span> 已从B的内核栈恢复 &nbsp;
+<span style="color:#993C1D">■</span> 即将由 IRET 硬件恢复
+</p>`
+  },
+  {
+    left: `
+<div class="panel-title">⑦ IRET 指令：硬件恢复 IP/CS/FLAGS，进程B运行</div>
+<div class="highlight-box highlight-teal">
+  <b style="color:#085041">IRET</b>（中断返回）是整个切换的最后一条指令。<br>
+  硬件原子性地完成：
+</div>
+<div class="code-block">
+<span class="code-hl">IRET   ; 弹出 IP → CS → FLAGS</span>
+</div>
+<div style="margin-top:8px">
+  <div class="stack-row stack-pop">📤 IP ← 弹出（进程B的断点地址）</div>
+  <div class="stack-row stack-pop">📤 CS ← 弹出（进程B的代码段）</div>
+  <div class="stack-row stack-pop">📤 FLAGS ← 弹出（含 IF=1，重新开中断）</div>
+</div>
+<p class="note">IRET 之后，CPU 流水线已经在执行进程B的指令<br>进程B"感觉"自己从未被打断过——这就是透明切换</p>`,
+    right: `
+<div class="success-box">
+  <b>✅ 切换完成！进程B运行中</b>
+  • CPU 现场 = 进程B上次被中断时的状态<br>
+  • SP 指向进程B的用户栈<br>
+  • CS:IP 指向进程B的下一条指令<br>
+  • FLAGS 中 IF=1，中断重新开放<br>
+  • 进程B继续执行，等待下次时间片到时
+</div>
+<p class="note" style="margin-top:10px">整个切换总开销（8088）约 100–300 条指令，<br>现代 CPU 因流水线冲刷会更高，约 1–10 µs</p>`
+  }
+];
+
+let cur = 0;
+
+function render() {
+  document.getElementById('left-panel').innerHTML = steps[cur].left;
+  document.getElementById('right-panel').innerHTML = steps[cur].right;
+  document.getElementById('step-label').textContent = `步骤 ${cur+1} / ${steps.length}`;
+  document.getElementById('btn-prev').disabled = cur === 0;
+  document.getElementById('btn-next').disabled = cur === steps.length - 1;
+  let d = '';
+  for (let i = 0; i < steps.length; i++) {
+    d += `<span class="step-dot ${i===cur?'active':i<cur?'done':''}"></span>`;
+  }
+  document.getElementById('dots').innerHTML = d;
+}
+
+function go(dir) {
+  cur = Math.max(0, Math.min(steps.length - 1, cur + dir));
+  render();
+}
+
+render();
+</script>
+</body>
+</html>

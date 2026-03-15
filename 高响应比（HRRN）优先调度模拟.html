@@ -1,0 +1,441 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>高响应比优先调度模拟器</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=DM+Mono:ital,wght@0,300;0,400;0,500;1,300&family=Ysabeau:wght@300;400;600&display=swap');
+:root{--bg:#F0EDE8;--bg2:#E8E4DC;--bg3:#DEDAD0;--card:#FAF8F4;--border:#D4CEC4;--border2:#C4BCB0;--text:#241E18;--text2:#6A5E52;--text3:#9C9088;--teal:#1A7A6E;--teal-l:#E4F4F1;--amber:#B86A10;--amber-l:#FDF0E0;--red:#C02828;--green:#2A7A3A;--green-l:#EAF5EC;--mono:'DM Mono',monospace;--serif:'Ysabeau',serif;--r:10px}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--text);font-family:var(--serif);min-height:100vh;padding:28px 24px}
+.header{margin-bottom:28px}
+.header h1{font-family:var(--mono);font-size:12px;font-weight:400;color:var(--teal);letter-spacing:.14em;text-transform:uppercase;margin-bottom:4px}
+.header p{font-size:22px;font-weight:600;color:var(--text);line-height:1.2}
+.formula-badge{display:inline-block;margin-top:10px;padding:5px 16px;background:var(--card);border:1px solid var(--border);border-radius:20px;font-family:var(--mono);font-size:12px;color:var(--text2)}
+.formula-badge span{color:var(--teal);font-weight:500}
+.layout{display:grid;grid-template-columns:300px 1fr;gap:20px;align-items:start}
+.panel{background:var(--card);border:1px solid var(--border);border-radius:var(--r);padding:18px;margin-bottom:16px}
+.panel:last-child{margin-bottom:0}
+.ptitle{font-family:var(--mono);font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--text3);padding-bottom:12px;border-bottom:1px solid var(--border);margin-bottom:14px}
+label{display:block;font-family:var(--mono);font-size:11px;color:var(--text2);margin-bottom:4px;margin-top:11px}
+label:first-of-type{margin-top:0}
+input[type=number],input[type=text]{width:100%;background:var(--bg2);border:1px solid var(--border);border-radius:6px;padding:7px 10px;font-family:var(--mono);font-size:13px;color:var(--text);outline:none;transition:border-color .15s}
+input:focus{border-color:var(--teal)}
+.row2{display:flex;gap:8px}
+.row2>*{flex:1}
+.tag-list{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
+.proc-tag{display:flex;align-items:center;gap:5px;padding:3px 8px 3px 6px;border-radius:20px;border:1px solid var(--border);background:var(--bg2);font-family:var(--mono);font-size:11px;color:var(--text2)}
+.proc-tag .dot{width:8px;height:8px;border-radius:50%}
+.proc-tag .rm{cursor:pointer;color:var(--text3);margin-left:2px;font-size:14px;line-height:1}
+.proc-tag .rm:hover{color:var(--red)}
+.btn{display:inline-flex;align-items:center;justify-content:center;padding:8px 16px;border-radius:7px;font-family:var(--mono);font-size:11px;letter-spacing:.04em;cursor:pointer;border:none;transition:all .15s}
+.btn-teal{background:var(--teal);color:#fff}
+.btn-teal:hover{background:#156058}
+.btn-ghost{background:var(--bg2);color:var(--text2);border:1px solid var(--border)}
+.btn-ghost:hover{background:var(--bg3)}
+.ctrl-row{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:14px}
+.speed-row{display:flex;align-items:center;gap:8px;margin-left:auto}
+.speed-row label{margin:0;font-size:10px;color:var(--text3)}
+input[type=range]{width:72px;accent-color:var(--teal)}
+.statusbar{font-family:var(--mono);font-size:11px;text-align:center;padding:7px 12px;border-radius:6px;margin-top:12px;background:var(--bg2);color:var(--text3);transition:background .3s,color .3s}
+.statusbar.go{background:#E4F4F1;color:var(--teal)}
+.statusbar.done{background:var(--green-l);color:var(--green)}
+.right{display:flex;flex-direction:column;gap:16px}
+.cpu-card{background:var(--card);border:1px solid var(--border);border-radius:var(--r);padding:16px 20px;display:flex;align-items:center;gap:16px}
+.cpu-pill{background:var(--teal);color:#fff;font-family:var(--mono);font-size:11px;font-weight:500;padding:5px 12px;border-radius:5px;letter-spacing:.06em;flex-shrink:0}
+.cpu-name{font-size:18px;font-weight:600;color:var(--text);font-family:var(--mono)}
+.cpu-sub{font-family:var(--mono);font-size:11px;color:var(--text3);margin-top:2px}
+.cpu-progress-wrap{flex:1;height:6px;background:var(--bg3);border-radius:3px;overflow:hidden}
+.cpu-progress{height:100%;background:var(--teal);border-radius:3px;transition:width .25s ease}
+.breakdown-card{background:var(--card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden}
+.breakdown-head{padding:12px 18px;border-bottom:1px solid var(--border);font-family:var(--mono);font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--text3);display:flex;align-items:center;gap:8px}
+.clock-badge{margin-left:auto;background:var(--bg2);border:1px solid var(--border);padding:2px 10px;border-radius:12px;font-size:11px;color:var(--text2)}
+.btable{width:100%;border-collapse:collapse}
+.btable th{padding:8px 14px;font-family:var(--mono);font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--text3);text-align:left;background:var(--bg2);border-bottom:1px solid var(--border)}
+.btable th.r{text-align:right}
+.btable td{padding:11px 14px;font-family:var(--mono);font-size:12px;color:var(--text2);border-bottom:1px solid var(--border);vertical-align:middle}
+.btable td.r{text-align:right}
+.btable tr:last-child td{border-bottom:none}
+.btable tr.winner td{background:var(--teal-l)}
+.pname-cell{display:flex;align-items:center;gap:7px}
+.pname-cell .dot{width:9px;height:9px;border-radius:50%;flex-shrink:0}
+.winner-badge{display:inline-block;padding:2px 8px;border-radius:10px;background:var(--teal);color:#fff;font-family:var(--mono);font-size:9px;letter-spacing:.06em;text-transform:uppercase;margin-left:6px}
+.rbar-cell{min-width:120px}
+.rbar-wrap{display:flex;align-items:center;gap:8px;justify-content:flex-end}
+.rbar{width:80px;height:5px;background:var(--bg3);border-radius:3px;overflow:hidden}
+.rbar-fill{height:100%;border-radius:3px;transition:width .4s ease}
+.rval{font-size:13px;font-weight:500;min-width:44px;text-align:right}
+.formula-cell{font-size:11px;color:var(--text3);font-family:var(--mono)}
+.formula-cell .hi{color:var(--amber);font-weight:500}
+.queue-card{background:var(--card);border:1px solid var(--border);border-radius:var(--r);padding:14px 18px}
+.queue-title{font-family:var(--mono);font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--text3);margin-bottom:12px}
+.queue-chips{display:flex;flex-wrap:wrap;gap:8px;min-height:36px;align-items:center}
+.qchip{padding:6px 14px;border-radius:7px;font-family:var(--mono);font-size:11px;display:flex;align-items:center;gap:6px;border:1.5px solid}
+.qchip-meta{font-size:9px;opacity:.75}
+.empty-q{font-family:var(--mono);font-size:11px;color:var(--text3);font-style:italic}
+.stats-row{display:flex;gap:12px;flex-wrap:wrap}
+.stat{flex:1;min-width:110px;background:var(--card);border:1px solid var(--border);border-radius:var(--r);padding:12px 16px}
+.stat-l{font-family:var(--mono);font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--text3);margin-bottom:4px}
+.stat-v{font-family:var(--mono);font-size:20px;font-weight:500;color:var(--text)}
+.stat-u{font-size:11px;color:var(--text3);margin-left:2px}
+.tl-card{background:var(--card);border:1px solid var(--border);border-radius:var(--r);padding:14px 18px}
+.tl-title{font-family:var(--mono);font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--text3);margin-bottom:10px}
+.tl-track{display:flex;flex-wrap:wrap;gap:2px}
+.tl-seg{height:26px;min-width:26px;border-radius:4px;display:flex;align-items:center;justify-content:center;font-family:var(--mono);font-size:9px;color:#fff;padding:0 5px;opacity:.9}
+.log-card{background:var(--card);border:1px solid var(--border);border-radius:var(--r);padding:14px 18px;max-height:280px;overflow-y:auto}
+.log-title{font-family:var(--mono);font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--text3);margin-bottom:10px}
+.log-entry{border-left:3px solid var(--border);padding:8px 12px;margin-bottom:8px;border-radius:0 6px 6px 0;background:var(--bg2);font-family:var(--mono);font-size:11px}
+.log-entry.latest{border-left-color:var(--teal);background:var(--teal-l)}
+.log-time{color:var(--text3);font-size:10px;margin-bottom:4px}
+.log-winner{color:var(--teal);font-weight:500}
+.log-calcs{color:var(--text2);font-size:10px;margin-top:4px;line-height:1.8}
+.log-calcs .hi{color:var(--amber);font-weight:500}
+.empty-log{font-family:var(--mono);font-size:11px;color:var(--text3);font-style:italic}
+::-webkit-scrollbar{width:5px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:var(--border2);border-radius:3px}
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>HRRN Scheduler</h1>
+  <p>高响应比优先调度模拟器</p>
+  <div class="formula-badge">
+    响应比 RR = <span>( 等待时间 W + 服务时间 S ) / 服务时间 S</span>
+  </div>
+</div>
+
+<div class="layout">
+  <div>
+    <div class="panel">
+      <div class="ptitle">进程配置</div>
+      <div class="row2">
+        <div><label>进程名</label><input type="text" id="pName" value="P1" maxlength="4"></div>
+        <div><label>到达时间</label><input type="number" id="pArr" value="0" min="0"></div>
+      </div>
+      <label>服务时间（执行时长）</label>
+      <input type="number" id="pBurst" value="5" min="1" max="30">
+      <div style="margin-top:12px">
+        <button class="btn btn-ghost" style="padding:6px 12px" onclick="addProc()">+ 添加进程</button>
+      </div>
+      <div id="procList" class="tag-list"></div>
+    </div>
+
+    <div class="panel">
+      <div class="ptitle">运行控制</div>
+      <div class="ctrl-row">
+        <button class="btn btn-teal" id="btnStart" onclick="startSim()">▶ 开始</button>
+        <button class="btn btn-ghost" onclick="stepSim()">单步</button>
+        <button class="btn btn-ghost" onclick="resetSim()">重置</button>
+        <div class="speed-row">
+          <label>速度</label>
+          <input type="range" id="speed" min="1" max="8" value="3">
+        </div>
+      </div>
+      <div id="statusbar" class="statusbar">就绪 — 添加进程后点击"开始"</div>
+    </div>
+  </div>
+
+  <div class="right">
+    <!-- CPU -->
+    <div class="cpu-card">
+      <div class="cpu-pill">CPU</div>
+      <div style="flex:1">
+        <div class="cpu-name" id="cpuName">—</div>
+        <div class="cpu-sub" id="cpuSub">等待进程</div>
+        <div style="margin-top:8px">
+          <div class="cpu-progress-wrap"><div class="cpu-progress" id="cpuBar" style="width:0%"></div></div>
+        </div>
+      </div>
+      <div style="text-align:right">
+        <div style="font-family:var(--mono);font-size:10px;color:var(--text3)">已执行</div>
+        <div style="font-family:var(--mono);font-size:18px;color:var(--text)" id="cpuDone">0</div>
+        <div style="font-family:var(--mono);font-size:10px;color:var(--text3);margin-top:4px">剩余</div>
+        <div style="font-family:var(--mono);font-size:18px;color:var(--text)" id="cpuLeft">—</div>
+      </div>
+    </div>
+
+    <!-- Priority breakdown -->
+    <div class="breakdown-card">
+      <div class="breakdown-head">
+        调度决策 — 各进程响应比计算
+        <span class="clock-badge" id="bdClock">T = —</span>
+      </div>
+      <div id="bdBody">
+        <div style="padding:20px;font-family:var(--mono);font-size:11px;color:var(--text3);font-style:italic">
+          每次发生进程切换时，这里会展示所有就绪进程的响应比计算过程
+        </div>
+      </div>
+    </div>
+
+    <!-- Ready queue -->
+    <div class="queue-card">
+      <div class="queue-title">就绪队列</div>
+      <div class="queue-chips" id="readyQ"><span class="empty-q">—</span></div>
+    </div>
+
+    <!-- Stats -->
+    <div class="stats-row">
+      <div class="stat"><div class="stat-l">时钟</div><div class="stat-v" id="sClock">0</div></div>
+      <div class="stat"><div class="stat-l">完成</div><div class="stat-v" id="sDone">0</div></div>
+      <div class="stat"><div class="stat-l">平均等待</div><div class="stat-v" id="sWait">—</div></div>
+      <div class="stat"><div class="stat-l">平均周转</div><div class="stat-v" id="sTA">—</div></div>
+    </div>
+
+    <!-- Timeline -->
+    <div class="tl-card">
+      <div class="tl-title">执行时间线（最近 100 单位）</div>
+      <div class="tl-track" id="timeline"></div>
+    </div>
+
+    <!-- Log -->
+    <div class="log-card">
+      <div class="log-title">调度决策日志</div>
+      <div id="logList"><div class="empty-log">调度事件将显示在这里</div></div>
+    </div>
+  </div>
+</div>
+
+<script>
+const PAL=[
+  {bg:'#1A7A6E',lt:'#E4F4F1'},{bg:'#B86A10',lt:'#FDF0E0'},
+  {bg:'#1A5FA0',lt:'#E4EEF8'},{bg:'#7A1A7A',lt:'#F4E4F4'},
+  {bg:'#2A7A3A',lt:'#EAF5EC'},{bg:'#7A3A1A',lt:'#F5ECDE'},
+  {bg:'#4A6A1A',lt:'#EEF4DE'},{bg:'#1A4A7A',lt:'#DEE8F5'},
+];
+let procs=[],pid=1,sim=null,timer=null,going=false;
+
+function addProc(){
+  const name=document.getElementById('pName').value.trim()||'P'+pid;
+  const arr=parseInt(document.getElementById('pArr').value)||0;
+  const burst=parseInt(document.getElementById('pBurst').value)||4;
+  const id=pid++;
+  procs.push({id,name,arr,burst,color:PAL[(id-1)%PAL.length]});
+  document.getElementById('pName').value='P'+pid;
+  renderProcList();
+}
+function removeProc(id){procs=procs.filter(p=>p.id!==id);renderProcList();}
+function renderProcList(){
+  const el=document.getElementById('procList');
+  if(!procs.length){el.innerHTML='<span style="font-family:var(--mono);font-size:11px;color:var(--text3);font-style:italic">尚未添加进程</span>';return;}
+  el.innerHTML=procs.map(p=>`<div class="proc-tag"><span class="dot" style="background:${p.color.bg}"></span><span>${p.name}</span><span style="color:var(--text3)">到=${p.arr} 服务=${p.burst}</span><span class="rm" onclick="removeProc(${p.id})">×</span></div>`).join('');
+}
+
+function initSim(){
+  const ps=procs.map(p=>({...p,remaining:p.burst,waitTime:0,finishTime:null,startTime:null,waitAccum:0,lastReadyAt:p.arr}));
+  ps.sort((a,b)=>a.arr-b.arr);
+  return{ps,clock:0,running:null,runningElapsed:0,done:[],timeline:[],log:[],needPick:true};
+}
+
+function computeRR(p,clock){
+  const waited=Math.max(0,clock-p.lastReadyAt)+p.waitAccum;
+  return{waited,rr:(waited+p.burst)/p.burst};
+}
+
+function getReady(state){
+  return state.ps.filter(p=>p.finishTime===null&&p!==state.running&&p.arr<=state.clock);
+}
+
+function simTick(state){
+  if(state.needPick){
+    const ready=getReady(state);
+    if(!ready.length){
+      // idle
+      state.clock++;
+      state.timeline.push({name:'—',color:'#C4BCB0'});
+      renderStats(state);renderTimeline(state);
+      return false;
+    }
+    // Compute RR for all ready
+    const ranked=ready.map(p=>{const{waited,rr}=computeRR(p,state.clock);return{p,waited,rr};}).sort((a,b)=>b.rr-a.rr);
+    const winner=ranked[0];
+    // If there was a previous runner, accumulate its wait properly
+    // (no-op for HRRN non-preemptive: once running, runs to completion)
+    state.running=winner.p;
+    state.runningElapsed=0;
+    if(state.running.startTime===null) state.running.startTime=state.clock;
+
+    // Render breakdown
+    const maxRR=Math.max(...ranked.map(r=>r.rr));
+    renderBreakdown(ranked,maxRR,state.clock);
+
+    // Log
+    const calcLines=ranked.map(r=>`${r.p.name}: (${r.waited}+${r.p.burst})/${r.p.burst} = ${r.rr.toFixed(3)}${r.p===winner.p?' ← 选中':''}`).join('\n');
+    state.log.unshift({time:state.clock,winner:winner.p.name,calcs:calcLines,color:winner.p.color,ranked});
+    renderLog(state.log);
+    state.needPick=false;
+  }
+
+  const proc=state.running;
+  proc.remaining--;
+  state.runningElapsed++;
+  state.timeline.push({name:proc.name,color:proc.color.bg});
+  state.clock++;
+
+  renderCPU(proc,state.runningElapsed);
+  renderReadyQueue(state);
+  renderStats(state);
+  renderTimeline(state);
+
+  if(proc.remaining<=0){
+    proc.finishTime=state.clock;
+    proc.waitTime=proc.finishTime-proc.arr-proc.burst;
+    state.done.push(proc);
+    state.running=null;
+    state.runningElapsed=0;
+    state.needPick=true;
+    if(state.done.length>=state.ps.length) return true;
+  }
+  return false;
+}
+
+function renderBreakdown(ranked,maxRR,clock){
+  document.getElementById('bdClock').textContent='T = '+clock;
+  const rows=ranked.map(r=>{
+    const pct=Math.round((r.rr/maxRR)*100);
+    const isW=r===ranked[0];
+    return`<tr class="${isW?'winner':''}">
+      <td><div class="pname-cell"><span class="dot" style="background:${r.p.color.bg}"></span><span style="color:${isW?'var(--teal)':'var(--text)'};font-weight:${isW?500:400}">${r.p.name}</span>${isW?'<span class="winner-badge">选中</span>':''}</div></td>
+      <td class="r">${r.waited}</td>
+      <td class="r">${r.p.burst}</td>
+      <td><div class="formula-cell">(${r.waited}+${r.p.burst})÷${r.p.burst} = <span class="hi">${r.rr.toFixed(3)}</span></div></td>
+      <td class="rbar-cell r">
+        <div class="rbar-wrap">
+          <div class="rbar"><div class="rbar-fill" style="width:${pct}%;background:${isW?'var(--teal)':'#9C9088'}"></div></div>
+          <div class="rval" style="color:${isW?'var(--teal)':'var(--text2)'}">${r.rr.toFixed(2)}</div>
+        </div>
+      </td>
+    </tr>`;
+  }).join('');
+  document.getElementById('bdBody').innerHTML=`<table class="btable"><thead><tr><th>进程</th><th class="r">等待 W</th><th class="r">服务 S</th><th>计算过程</th><th class="r">响应比 RR</th></tr></thead><tbody>${rows}</tbody></table>`;
+}
+
+function renderCPU(proc,elapsed){
+  if(!proc){
+    document.getElementById('cpuName').textContent='—';
+    document.getElementById('cpuSub').textContent='空闲';
+    document.getElementById('cpuBar').style.width='0%';
+    document.getElementById('cpuDone').textContent='0';
+    document.getElementById('cpuLeft').textContent='—';
+    return;
+  }
+  document.getElementById('cpuName').innerHTML=`<span style="color:${proc.color.bg}">${proc.name}</span>`;
+  document.getElementById('cpuSub').textContent=`服务时间 ${proc.burst} 单位`;
+  document.getElementById('cpuBar').style.width=Math.round(elapsed/proc.burst*100)+'%';
+  document.getElementById('cpuDone').textContent=elapsed;
+  document.getElementById('cpuLeft').textContent=proc.remaining;
+}
+
+function renderReadyQueue(state){
+  const el=document.getElementById('readyQ');
+  const ready=getReady(state);
+  if(!ready.length){el.innerHTML='<span class="empty-q">空</span>';return;}
+  el.innerHTML=ready.map(p=>{
+    const{rr}=computeRR(p,state.clock);
+    return`<div class="qchip" style="background:${p.color.lt};color:${p.color.bg};border-color:${p.color.bg}44">
+      <span class="dot" style="background:${p.color.bg};width:8px;height:8px;border-radius:50%;display:inline-block"></span>
+      <span>${p.name}</span>
+      <span class="qchip-meta">RR=${rr.toFixed(2)}</span>
+    </div>`;
+  }).join('');
+}
+
+function renderStats(state){
+  document.getElementById('sClock').textContent=state.clock;
+  document.getElementById('sDone').textContent=state.done.length;
+  if(state.done.length>0){
+    const avgW=(state.done.reduce((s,p)=>s+p.waitTime,0)/state.done.length).toFixed(1);
+    const avgT=(state.done.reduce((s,p)=>s+(p.finishTime-p.arr),0)/state.done.length).toFixed(1);
+    document.getElementById('sWait').innerHTML=avgW+'<span class="stat-u"> 单位</span>';
+    document.getElementById('sTA').innerHTML=avgT+'<span class="stat-u"> 单位</span>';
+  }
+}
+
+function renderTimeline(state){
+  const shown=state.timeline.slice(-100);
+  document.getElementById('timeline').innerHTML=shown.map(t=>`<div class="tl-seg" style="background:${t.color}">${t.name}</div>`).join('');
+}
+
+function renderLog(log){
+  const el=document.getElementById('logList');
+  if(!log.length){el.innerHTML='<div class="empty-log">调度事件将显示在这里</div>';return;}
+  el.innerHTML=log.slice(0,10).map((entry,i)=>{
+    const lines=entry.calcs.split('\n').map(l=>{
+      const isW=l.includes('← 选中');
+      return`<div${isW?' class="hi"':''}>${l}</div>`;
+    }).join('');
+    return`<div class="log-entry ${i===0?'latest':''}">
+      <div class="log-time">T = ${entry.time}</div>
+      <div>选中 <span class="log-winner">${entry.winner}</span></div>
+      <div class="log-calcs">${lines}</div>
+    </div>`;
+  }).join('');
+}
+
+function startSim(){
+  if(!procs.length){alert('请先添加进程');return;}
+  if(!sim) sim=initSim();
+  if(going){
+    going=false;clearInterval(timer);
+    document.getElementById('btnStart').textContent='▶ 继续';
+    setStatus('已暂停',false,false);return;
+  }
+  going=true;
+  document.getElementById('btnStart').textContent='⏸ 暂停';
+  setStatus('运行中…',true,false);
+  const sp=parseInt(document.getElementById('speed').value);
+  timer=setInterval(()=>{
+    const done=simTick(sim);
+    if(done){
+      clearInterval(timer);going=false;
+      document.getElementById('btnStart').textContent='▶ 开始';
+      setStatus('调度完成！所有进程执行完毕 ✓',false,true);
+      renderCPU(null,0);renderReadyQueue(sim);
+    }
+  },Math.round(900/sp));
+}
+
+function stepSim(){
+  if(!procs.length){alert('请先添加进程');return;}
+  if(going){clearInterval(timer);going=false;document.getElementById('btnStart').textContent='▶ 继续';}
+  if(!sim) sim=initSim();
+  const done=simTick(sim);
+  if(done){
+    setStatus('调度完成！所有进程执行完毕 ✓',false,true);
+    renderCPU(null,0);renderReadyQueue(sim);
+  }else setStatus('单步 — T = '+sim.clock,false,false);
+}
+
+function resetSim(){
+  clearInterval(timer);going=false;sim=null;
+  document.getElementById('btnStart').textContent='▶ 开始';
+  renderCPU(null,0);
+  document.getElementById('bdClock').textContent='T = —';
+  document.getElementById('bdBody').innerHTML='<div style="padding:20px;font-family:var(--mono);font-size:11px;color:var(--text3);font-style:italic">每次发生进程切换时，这里会展示所有就绪进程的响应比计算过程</div>';
+  document.getElementById('readyQ').innerHTML='<span class="empty-q">—</span>';
+  document.getElementById('timeline').innerHTML='';
+  document.getElementById('logList').innerHTML='<div class="empty-log">调度事件将显示在这里</div>';
+  document.getElementById('sClock').textContent='0';
+  document.getElementById('sDone').textContent='0';
+  document.getElementById('sWait').textContent='—';
+  document.getElementById('sTA').textContent='—';
+  setStatus('已重置 — 点击"开始"运行',false,false);
+}
+
+function setStatus(msg,isGo,isDone){
+  const el=document.getElementById('statusbar');
+  el.textContent=msg;
+  el.className='statusbar'+(isDone?' done':isGo?' go':'');
+}
+
+// Defaults
+[{name:'P1',arr:0,burst:4},{name:'P2',arr:1,burst:3},{name:'P3',arr:2,burst:5},{name:'P4',arr:3,burst:2},{name:'P5',arr:4,burst:6}].forEach(d=>{
+  const id=pid++;
+  procs.push({id,name:d.name,arr:d.arr,burst:d.burst,color:PAL[(id-1)%PAL.length]});
+});
+renderProcList();
+</script>
+</body>
+</html>
